@@ -519,6 +519,3 @@ def d_log_decoding(x, out_reflection=False):
 
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    print(eotf(1.0, HLG))
-    print(eotf_to_luminance(1.0, HLG))
-    print(oetf(1.0, HLG))
