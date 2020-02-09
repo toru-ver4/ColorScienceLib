@@ -8,7 +8,6 @@
 
 import os
 import cv2
-import plot_utility as pu
 import matplotlib.pyplot as plt
 import numpy as np
 from colour.colorimetry import CMFS, ILLUMINANTS
@@ -19,8 +18,9 @@ from colour import models
 from colour import RGB_COLOURSPACES
 from scipy.spatial import Delaunay
 from scipy.ndimage.filters import convolve
-import color_space as cs
 import math
+
+import transfer_functions as tf
 
 
 CMFS_NAME = 'CIE 1931 2 Degree Standard Observer'
@@ -35,6 +35,8 @@ def preview_image(img, order='rgb', over_disp=False):
     if order == 'rgb':
         cv2.imshow('preview', img[:, :, ::-1])
     elif order == 'bgr':
+        cv2.imshow('preview', img)
+    elif order == 'mono':
         cv2.imshow('preview', img)
     else:
         raise ValueError("order parameter is invalid")
@@ -236,80 +238,80 @@ def get_secondaries(name='ITU-R BT.2020'):
     return xy, secondary_rgb.reshape((3, 3))
 
 
-def plot_chromaticity_diagram(
-        rate=480/755.0*2, xmin=0.0, xmax=0.8, ymin=0.0, ymax=0.9, **kwargs):
-    # キーワード引数の初期値設定
-    # ------------------------------------
-    monitor_primaries = kwargs.get('monitor_primaries', None)
-    secondaries = kwargs.get('secondaries', None)
-    test_scatter = kwargs.get('test_scatter', None)
-    intersection = kwargs.get('intersection', None)
+# def plot_chromaticity_diagram(
+#         rate=480/755.0*2, xmin=0.0, xmax=0.8, ymin=0.0, ymax=0.9, **kwargs):
+#     # キーワード引数の初期値設定
+#     # ------------------------------------
+#     monitor_primaries = kwargs.get('monitor_primaries', None)
+#     secondaries = kwargs.get('secondaries', None)
+#     test_scatter = kwargs.get('test_scatter', None)
+#     intersection = kwargs.get('intersection', None)
 
-    # プロット用データ準備
-    # ---------------------------------
-    xy_image = get_chromaticity_image(
-        xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
-    cmf_xy = _get_cmfs_xy()
+#     # プロット用データ準備
+#     # ---------------------------------
+#     xy_image = get_chromaticity_image(
+#         xmin=xmin, xmax=xmax, ymin=ymin, ymax=ymax)
+#     cmf_xy = _get_cmfs_xy()
 
-    bt709_gamut, _ = get_primaries(name=cs.BT709)
-    bt2020_gamut, _ = get_primaries(name=cs.BT2020)
-    dci_p3_gamut, _ = get_primaries(name=cs.P3_D65)
-    ap0_gamut, _ = get_primaries(name=cs.ACES_AP0)
-    ap1_gamut, _ = get_primaries(name=cs.ACES_AP1)
-    xlim = (min(0, xmin), max(0.8, xmax))
-    ylim = (min(0, ymin), max(0.9, ymax))
+#     bt709_gamut, _ = get_primaries(name=cs.BT709)
+#     bt2020_gamut, _ = get_primaries(name=cs.BT2020)
+#     dci_p3_gamut, _ = get_primaries(name=cs.P3_D65)
+#     ap0_gamut, _ = get_primaries(name=cs.ACES_AP0)
+#     ap1_gamut, _ = get_primaries(name=cs.ACES_AP1)
+#     xlim = (min(0, xmin), max(0.8, xmax))
+#     ylim = (min(0, ymin), max(0.9, ymax))
 
-    ax1 = pu.plot_1_graph(fontsize=20 * rate,
-                          figsize=((xmax - xmin) * 10 * rate,
-                                   (ymax - ymin) * 10 * rate),
-                          graph_title="CIE1931 Chromaticity Diagram",
-                          graph_title_size=None,
-                          xlabel=None, ylabel=None,
-                          axis_label_size=None,
-                          legend_size=18 * rate,
-                          xlim=xlim, ylim=ylim,
-                          xtick=[x * 0.1 + xmin for x in
-                                 range(int((xlim[1] - xlim[0])/0.1) + 1)],
-                          ytick=[x * 0.1 + ymin for x in
-                                 range(int((ylim[1] - ylim[0])/0.1) + 1)],
-                          xtick_size=17 * rate,
-                          ytick_size=17 * rate,
-                          linewidth=4 * rate,
-                          minor_xtick_num=2,
-                          minor_ytick_num=2)
-    ax1.plot(cmf_xy[..., 0], cmf_xy[..., 1], '-k', lw=3.5*rate, label=None)
-    ax1.plot((cmf_xy[-1, 0], cmf_xy[0, 0]), (cmf_xy[-1, 1], cmf_xy[0, 1]),
-             '-k', lw=3.5*rate, label=None)
-    ax1.plot(bt709_gamut[:, 0], bt709_gamut[:, 1],
-             c=UNIVERSAL_COLOR_LIST[0], label="BT.709", lw=2.75*rate)
-    ax1.plot(bt2020_gamut[:, 0], bt2020_gamut[:, 1],
-             c=UNIVERSAL_COLOR_LIST[1], label="BT.2020", lw=2.75*rate)
-    ax1.plot(dci_p3_gamut[:, 0], dci_p3_gamut[:, 1],
-             c=UNIVERSAL_COLOR_LIST[2], label="DCI-P3", lw=2.75*rate)
-    ax1.plot(ap1_gamut[:, 0], ap1_gamut[:, 1],
-             c=UNIVERSAL_COLOR_LIST[3], label="ACES AP1", lw=2.75*rate)
-    ax1.plot(ap0_gamut[:, 0], ap0_gamut[:, 1],
-             c=UNIVERSAL_COLOR_LIST[4], label="ACES AP0", lw=2.75*rate)
-    if monitor_primaries is not None:
-        ax1.plot(monitor_primaries[:, 0], monitor_primaries[:, 1],
-                 c="#202020", label="???", lw=3*rate)
-    if secondaries is not None:
-        xy, rgb = secondaries
-        ax1.scatter(xy[..., 0], xy[..., 1], s=700*rate, marker='s', c=rgb,
-                    edgecolors='#404000', linewidth=2*rate)
-    if test_scatter is not None:
-        xy, rgb = test_scatter
-        ax1.scatter(xy[..., 0], xy[..., 1], s=300*rate, marker='s', c=rgb,
-                    edgecolors='#404040', linewidth=2*rate)
-    if intersection is not None:
-        ax1.scatter(intersection[..., 0], intersection[..., 1],
-                    s=300*rate, marker='s', c='#CCCCCC',
-                    edgecolors='#404040', linewidth=2*rate)
+#     ax1 = pu.plot_1_graph(fontsize=20 * rate,
+#                           figsize=((xmax - xmin) * 10 * rate,
+#                                    (ymax - ymin) * 10 * rate),
+#                           graph_title="CIE1931 Chromaticity Diagram",
+#                           graph_title_size=None,
+#                           xlabel=None, ylabel=None,
+#                           axis_label_size=None,
+#                           legend_size=18 * rate,
+#                           xlim=xlim, ylim=ylim,
+#                           xtick=[x * 0.1 + xmin for x in
+#                                  range(int((xlim[1] - xlim[0])/0.1) + 1)],
+#                           ytick=[x * 0.1 + ymin for x in
+#                                  range(int((ylim[1] - ylim[0])/0.1) + 1)],
+#                           xtick_size=17 * rate,
+#                           ytick_size=17 * rate,
+#                           linewidth=4 * rate,
+#                           minor_xtick_num=2,
+#                           minor_ytick_num=2)
+#     ax1.plot(cmf_xy[..., 0], cmf_xy[..., 1], '-k', lw=3.5*rate, label=None)
+#     ax1.plot((cmf_xy[-1, 0], cmf_xy[0, 0]), (cmf_xy[-1, 1], cmf_xy[0, 1]),
+#              '-k', lw=3.5*rate, label=None)
+#     ax1.plot(bt709_gamut[:, 0], bt709_gamut[:, 1],
+#              c=UNIVERSAL_COLOR_LIST[0], label="BT.709", lw=2.75*rate)
+#     ax1.plot(bt2020_gamut[:, 0], bt2020_gamut[:, 1],
+#              c=UNIVERSAL_COLOR_LIST[1], label="BT.2020", lw=2.75*rate)
+#     ax1.plot(dci_p3_gamut[:, 0], dci_p3_gamut[:, 1],
+#              c=UNIVERSAL_COLOR_LIST[2], label="DCI-P3", lw=2.75*rate)
+#     ax1.plot(ap1_gamut[:, 0], ap1_gamut[:, 1],
+#              c=UNIVERSAL_COLOR_LIST[3], label="ACES AP1", lw=2.75*rate)
+#     ax1.plot(ap0_gamut[:, 0], ap0_gamut[:, 1],
+#              c=UNIVERSAL_COLOR_LIST[4], label="ACES AP0", lw=2.75*rate)
+#     if monitor_primaries is not None:
+#         ax1.plot(monitor_primaries[:, 0], monitor_primaries[:, 1],
+#                  c="#202020", label="???", lw=3*rate)
+#     if secondaries is not None:
+#         xy, rgb = secondaries
+#         ax1.scatter(xy[..., 0], xy[..., 1], s=700*rate, marker='s', c=rgb,
+#                     edgecolors='#404000', linewidth=2*rate)
+#     if test_scatter is not None:
+#         xy, rgb = test_scatter
+#         ax1.scatter(xy[..., 0], xy[..., 1], s=300*rate, marker='s', c=rgb,
+#                     edgecolors='#404040', linewidth=2*rate)
+#     if intersection is not None:
+#         ax1.scatter(intersection[..., 0], intersection[..., 1],
+#                     s=300*rate, marker='s', c='#CCCCCC',
+#                     edgecolors='#404040', linewidth=2*rate)
 
-    ax1.imshow(xy_image, extent=(xmin, xmax, ymin, ymax))
-    plt.legend(loc='upper right')
-    plt.savefig('temp_fig.png', bbox_inches='tight')
-    plt.show()
+#     ax1.imshow(xy_image, extent=(xmin, xmax, ymin, ymax))
+#     plt.legend(loc='upper right')
+#     plt.savefig('temp_fig.png', bbox_inches='tight')
+#     plt.show()
 
 
 def get_chromaticity_image(samples=1024, antialiasing=True, bg_color=0.9,
@@ -610,24 +612,24 @@ def quadratic_bezier_curve(t, p0, p1, p2, samples=1024):
     y = ((1 - t) ** 2) * p0[1] + 2 * (1 - t) * t * p1[1]\
         + (t ** 2) * p2[1]
 
-    ax1 = pu.plot_1_graph(fontsize=20,
-                          figsize=(10, 8),
-                          graph_title="Title",
-                          graph_title_size=None,
-                          xlabel="X Axis Label", ylabel="Y Axis Label",
-                          axis_label_size=None,
-                          legend_size=17,
-                          xlim=None,
-                          ylim=None,
-                          xtick=None,
-                          ytick=None,
-                          xtick_size=None, ytick_size=None,
-                          linewidth=3,
-                          minor_xtick_num=None,
-                          minor_ytick_num=None)
-    ax1.plot(x, y, label='aaa')
-    plt.legend(loc='upper left')
-    plt.show()
+    # ax1 = pu.plot_1_graph(fontsize=20,
+    #                       figsize=(10, 8),
+    #                       graph_title="Title",
+    #                       graph_title_size=None,
+    #                       xlabel="X Axis Label", ylabel="Y Axis Label",
+    #                       axis_label_size=None,
+    #                       legend_size=17,
+    #                       xlim=None,
+    #                       ylim=None,
+    #                       xtick=None,
+    #                       ytick=None,
+    #                       xtick_size=None, ytick_size=None,
+    #                       linewidth=3,
+    #                       minor_xtick_num=None,
+    #                       minor_ytick_num=None)
+    # ax1.plot(x, y, label='aaa')
+    # plt.legend(loc='upper left')
+    # plt.show()
 
 
 def gen_step_gradation(width=1024, height=128, step_num=17,
@@ -732,6 +734,36 @@ def merge(img_a, img_b, pos=(0, 0)):
     b_height = img_b.shape[0]
 
     img_a[pos[1]:b_height+pos[1], pos[0]:b_width+pos[0]] = img_b
+
+
+def merge_with_alpha(bg_img, fg_img, tf_str=tf.SRGB, pos=(0, 0)):
+    """
+    合成する。
+
+    Parameters
+    ----------
+    bg_img : array_like(float, 3-channel)
+        image data.
+    fg_img : array_like(float, 4-channel)
+        image data
+    tf : strings
+        transfer function
+    pos : list(int)
+        (pos_h, pos_v)
+    """
+    f_width = fg_img.shape[1]
+    f_height = fg_img.shape[0]
+
+    bg_merge_area = bg_img[pos[1]:f_height+pos[1], pos[0]:f_width+pos[0]]
+    bg_linear = tf.eotf_to_luminance(bg_merge_area, tf_str)
+    fg_linear = tf.eotf_to_luminance(fg_img, tf_str)
+    alpha = fg_linear[:, :, 3:] / tf.PEAK_LUMINANCE[tf_str]
+
+    out_linear = (1 - alpha) * bg_linear + fg_linear[:, :, :-1]
+    out_merge_area = tf.oetf_from_luminance(out_linear, tf_str)
+    bg_img[pos[1]:f_height+pos[1], pos[0]:f_width+pos[0]] = out_merge_area
+
+    return bg_img
 
 
 def dot_pattern(dot_size=4, repeat=4, color=np.array([1.0, 1.0, 1.0])):
@@ -1118,26 +1150,117 @@ def shaper_func_log2_to_linear(
     return y
 
 
+def draw_straight_line(img, pt1, pt2, color, thickness):
+    """
+    直線を引く。OpenCV だと 8bit しか対応してないっぽいので自作。
+
+    Parameters
+    ----------
+    img : array_like
+        image data.
+    pt1 : list(pos_h, pos_v)
+        start point.
+    pt2 : list(pos_h, pos_v)
+        end point.
+    color : array_like
+        color
+    thickness : int
+        thickness.
+
+    Returns
+    -------
+    array_like
+        image data with line.
+
+    Notes
+    -----
+    thickness のパラメータは pt1 の点から右下方向に効きます。
+    pt1 を中心として太さではない事に注意。
+
+    Examples
+    --------
+    >>> pt1 = (0, 0)
+    >>> pt2 = (1920, 0)
+    >>> color = (940, 940, 940)
+    >>> thickness = 4
+    >>> draw_straight_line(img, pt1, pt2, color, thickness)
+    """
+    # parameter check
+    if (pt1[0] != pt2[0]) and (pt1[1] != pt2[1]):
+        raise ValueError("invalid pt1, pt2 parameters")
+
+    # check direction
+    if pt1[0] == pt2[0]:
+        thickness_direction = 'h'
+    else:
+        thickness_direction = 'v'
+
+    if thickness_direction == 'h':
+        for h_idx in range(thickness):
+            img[pt1[1]:pt2[1], pt1[0] + h_idx, :] = color
+
+    elif thickness_direction == 'v':
+        for v_idx in range(thickness):
+            img[pt1[1] + v_idx, pt1[0]:pt2[0], :] = color
+
+
+def draw_outline(img, fg_color, outline_width):
+    """
+    img に対して外枠線を引く
+
+    Parameters
+    ----------
+    img : array_like
+        image data.
+    fg_color : array_like
+        color
+    outline_width : int
+        thickness.
+
+    Returns
+    -------
+    array_like
+        image data with line.
+    """
+    width = img.shape[1]
+    height = img.shape[0]
+    # upper left
+    pt1 = (0, 0)
+    pt2 = (width, 0)
+    draw_straight_line(
+        img, pt1, pt2, fg_color, outline_width)
+    pt1 = (0, 0)
+    pt2 = (0, height)
+    draw_straight_line(
+        img, pt1, pt2, fg_color, outline_width)
+    # lower right
+    pt1 = (width - outline_width, 0)
+    pt2 = (width - outline_width, height)
+    draw_straight_line(
+        img, pt1, pt2, fg_color, outline_width)
+    pt1 = (0, height - outline_width)
+    pt2 = (width, height - outline_width)
+    draw_straight_line(
+        img, pt1, pt2, fg_color, outline_width)
+
+
+def convert_luminance_to_color_value(luminance, transfer_function):
+    """
+    輝度[cd/m2] から 10bit code value の RGB値に変換する。
+    luminance の単位は [cd/m2]。無彩色である。
+    """
+    code_value = convert_luminance_to_code_value(
+        luminance, transfer_function)
+    return np.array([code_value, code_value, code_value])
+
+
+def convert_luminance_to_code_value(luminance, transfer_function):
+    """
+    輝度[cd/m2] から 10bit code value に変換する。
+    luminance の単位は [cd/m2]
+    """
+    return tf.oetf_from_luminance(luminance, transfer_function)
+
+
 if __name__ == '__main__':
     os.chdir(os.path.dirname(os.path.abspath(__file__)))
-    plot_chromaticity_diagram()
-    plot_chromaticity_diagram(xmin=-0.1, xmax=0.8, ymin=-0.1, ymax=1.05)
-    # plot_xyY_color_space(name='ITU-R BT.2020', samples=256)
-    # samples = 1024
-    # p0 = np.array([0.5, 0.5])
-    # p1 = np.array([0.75, 1.0])
-    # p2 = np.array([1.0, 1.0])
-    # x = np.linspace(0, 1.0, samples)
-    # quadratic_bezier_curve(x, p0, p1, p2, samples)
-    # dot_pattern(dot_size=32, repeat=4, color=(1.0, 1.0, 1.0))
-    # complex_dot_pattern(kind_num=3, whole_repeat=1,
-    #                     fg_color=np.array([1.0, 1.0, 1.0]),
-    #                     bg_color=np.array([0.15, 0.15, 0.15]))
-    # make_csf_color_image(width=640, height=640,
-    #                      lv1=np.array([940, 0, 940], dtype=np.uint16),
-    #                      lv2=np.array([1023, 1023, 0], dtype=np.uint16),
-    #                      stripe_num=6)
-    # make_ycbcr_checker(height=30, v_tile_num=2)
-    # make_tile_pattern(width=960, height=480, h_tile_num=7,
-    #                   v_tile_num=4, low_level=(940, 940, 940),
-    #                   high_level=(1023, 1023, 1023))
